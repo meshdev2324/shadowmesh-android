@@ -1,0 +1,104 @@
+<resources>
+    <string name="app_name">Shadow Mesh</string>
+    <string name="app_name_notes">Notes</string>
+    <string name="app_tagline">Anonymous by Design</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Activation -->
+    <string name="activation_title">Activate ShadowMesh</string>
+    <string name="activation_subtitle">Enter your 25-character license key to continue</string>
+    <string name="activation_label">Activation Code</string>
+    <string name="activation_button">Activate Device</string>
+    <string name="activation_error_generic">Activation failed</string>
+    <string name="pairing_issue_key">ISSUE DEVICE KEY</string>
+    <string name="pairing_reissue">Revoke &amp; reissue (invalidates the key above)</string>
+
+    <!-- Status -->
+    <string name="status_ready">Secure mesh ready</string>
+    <string name="status_idle">IDLE</string>
+    <string name="status_sync">SYNC</string>
+    <string name="status_connected">CONNECTED</string>
+    <string name="status_paused">PAUSED</string>
+    <string name="status_connecting">Optimizing connection...</string>
+    <string name="status_optimizing">Improving mesh stability...</string>
+    <string name="status_finding_route">Finding most resilient route...</string>
+    <string name="status_protected">You are Protected</string>
+    <string name="status_syncing_mesh">Synchronizing secure mesh...</string>
+    <string name="status_stable_connection">Connection verified</string>
+    <string name="status_stalled">Network instability detected. Re-securing...</string>
+    <string name="status_connecting_phase1">Establishing secure baseline...</string>
+    <string name="status_connecting_phase2">Bypassing local interference...</string>
+    <string name="status_connecting_phase3">Applying enhanced cloaking...</string>
+    <string name="status_active">Secure mesh active</string>
+    <string name="status_disconnecting">Pausing protection...</string>
+    <string name="status_error">Protection interrupted</string>
+    <string name="status_encrypted">Verified encryption</string>
+    <string name="status_not_connected">Not Protected</string>
+    <string name="status_internet_paused">Internet paused to keep you safe.</string>
+    <string name="status_connected_a11y">VPN Connected, you are now protected.</string>
+
+    <!-- Security -->
+    <string name="security_alert_mitm">Security Alert: This network may be compromised. Connection blocked for your safety. Please try another location.</string>
+    <string name="security_error_generic">Re-securing your connection. We\'re having trouble reaching the mesh entry. Please check your internet.</string>
+
+    <string name="security_warning_rooted">Your device appears to be rooted, which may compromise security.</string>
+    <string name="security_warning_rooted_camouflage">System optimization required. Some notes may not sync correctly until the device is updated.</string>
+    <string name="security_lock_title">Biometric Login</string>
+    <string name="security_lock_subtitle">Log in using your biometric credential</string>
+    <string name="security_lock_negative">Use PIN</string>
+
+    <!-- Permissions -->
+    <string name="permission_vpn_title">VPN Permission Required</string>
+    <string name="permission_vpn_text">ShadowMesh uses a VpnService to create a secure, encrypted tunnel to its mesh network.</string>
+    <string name="permission_sync_title">Cloud Sync Permission</string>
+    <string name="permission_sync_text">Notes uses a secure background service to synchronize your personal diary entries across the mesh network.</string>
+    <string name="permission_accept_button">ACCEPT &amp; CONTINUE</string>
+
+    <!-- UI Elements -->
+    <string name="button_on">ON</string>
+    <string name="button_secure">SECURE</string>
+    <string name="available_servers">AVAILABLE SERVERS</string>
+    <string name="refresh">Refresh</string>
+    <string name="logout">Logout</string>
+    <string name="ok">OK</string>
+    <string name="cancel">CANCEL</string>
+
+    <!-- Pairing -->
+    <string name="pairing_title">Scan QR Code</string>
+    <string name="pairing_scan_hint">Point at Activation QR or Desktop Pairing Screen</string>
+    <string name="pairing_secure_title">Secure Pairing</string>
+    <string name="pairing_secure_desc">Enter the 6-digit PIN shown on your ShadowMesh Desktop screen to establish a trusted connection.</string>
+    <string name="pairing_pin_placeholder">000000</string>
+    <string name="pairing_button_pair">PAIR NOW</string>
+    <string name="pairing_camera_required">Camera Access Required</string>
+    <string name="pairing_grant_permission">Grant Permission</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_kill_switch_desc">Learn about kill switch &amp; security features</string>
+    <string name="settings_guide_subtitle">Connect ShadowMesh step by step</string>
+    <string name="settings_pairing_qr_desc">QR code containing your device pairing credentials</string>
+    <string name="settings_theme_accent">Theme Accent</string>
+    <string name="settings_quick_mode_switch">Quick Mode Switch</string>
+
+    <!-- Account -->
+    <string name="account_profile_title">Mesh Identity</string>
+    <string name="account_deactivate_mesh">DEACTIVATE MESH</string>
+
+    <!-- Split Tunneling -->
+    <string name="st_title">Split Tunneling</string>
+    <string name="st_apply">APPLY</string>
+    <string name="st_enable">Enable Split Tunneling</string>
+    <string name="st_desc">Route specific apps through the VPN</string>
+    <string name="st_exclude_mode">Exclude mode</string>
+    <string name="st_include_mode">Include mode</string>
+    <string name="st_search_placeholder">Search apps</string>
+
+    <!-- MFA -->
+    <string name="mfa_verification_code">6-Digit Verification Code</string>
+    <string name="mfa_verify_button">Verify and Enable MFA</string>
+    <string name="mfa_setup_later">Setup Later</string>
+</resources>

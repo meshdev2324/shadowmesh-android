@@ -1,0 +1,74 @@
+name: Android CI/CD (Public Standalone)
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    name: Build & Test Android
+    if: github.repository != 'meshdev2324/shadowmesh-private'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Environment
+        run: |
+          echo "Listing root directory:"
+          ls -F
+          echo "Searching for native libraries..."
+          find . -name "*.so"
+          if [ $(find . -name "*.so" | wc -l) -eq 0 ]; then
+            echo "❌ CRITICAL ERROR: Native libraries missing in repository!"
+            exit 1
+          fi
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run Lint & Detekt
+        run: ./gradlew :app:lintDebug detekt ktlintCheck -Dorg.gradle.java.home=$JAVA_HOME
+
+      - name: Build Debug APK
+        run: ./gradlew :app:assembleDebug -Dorg.gradle.java.home=$JAVA_HOME
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadowmesh-android-debug
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+
+      - name: Decode Keystore
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > app/shadowmesh.jks
+
+      - name: Build Release APK & Bundle (.aab)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: ./gradlew :app:assembleRelease :app:bundleRelease -Dorg.gradle.java.home=$JAVA_HOME
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
+          draft: false
+          prerelease: false
