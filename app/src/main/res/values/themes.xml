@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ShadowMesh" parent="Theme.Material3.DayNight.NoActionBar">
+    </style>
+
+    <!-- Standard ShadowMesh Splash -->
+    <style name="Theme.ShadowMesh.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#0A0A0F</item>
+        <!-- Removing explicit icon allows system to use activity/alias icon -->
+        <item name="postSplashScreenTheme">@style/Theme.ShadowMesh</item>
+    </style>
+
+    <!-- Camouflaged Notes Splash -->
+    <style name="Theme.Notes.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#FFFFFF</item>
+        <!-- Removing explicit icon allows system to use activity/alias icon -->
+        <item name="postSplashScreenTheme">@style/Theme.ShadowMesh</item>
+    </style>
+</resources>
