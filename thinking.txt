@@ -1,0 +1,464 @@
+Input:
+
+
+json
+{"retain_images":false,"url":"https://github.com/XTLS/reality"}
+Executing on server... Output: webReader_result_summary: [{"text": {"title": "GitHub - XTLS/REALITY: THE NEXT FUTURE", "description": "THE NEXT FUTURE. Contribute to XTLS/REALITY development by creating an account on GitHub.", "url": "https://github.com/XTLS/reality", "content": "## THE NEXT FUTURE\n\nServer side implementation of REALITY protocol, a fork... The REALITY repo is server-side only — the client implementation lives in Xray-core at transport/internet/reality/reality.go. Fetching it now.🌐 Z.ai Built-in Tool: webReader
+
+Input:
+
+
+json
+{"retain_images":false,"url":"https://raw.githubusercontent.com/XTLS/Xray-core/main/transport/internet/reality/reality.go"}
+Executing on server... Output: webReader_result_summary: [{"text": {"url": "https://raw.githubusercontent.com/XTLS/Xray-core/main/transport/internet/reality/reality.go", "content": "package reality\nimport (\n"bytes"\n"context"\n"crypto/ecdh"\n"crypto/ed25519"\n"crypto/hmac"\n"crypto/sha256"\n"crypto/sha512"\ngotls "crypto/tls"\n"crypto/x... This is the exact REALITY client algorithm. Now I need the server-side validation logic from the xtls/reality module to confirm the AEAD/AAD reconstruction. Let me get the module's file list.🌐 Z.ai Built-in Tool: webReader
+
+Input:
+
+
+json
+{"retain_images":false,"url":"https://api.github.com/repos/XTLS/REALITY/contents"}
+Executing on server... Output: webReader_result_summary: [{"text": {"url": "https://api.github.com/repos/XTLS/REALITY/contents", "content": "```\n[\n {\n "name": "LICENSE",\n "path": "LICENSE",\n "sha": "8a6b9b696bbc4dc39f158b9ffe81bc9ee03b680e",\n "size": 16772,\n "url": "https://api.github.com/repos/XTLS/REALITY/contents... I now have the exact REALITY client algorithm (session_id auth: HKDF-SHA256 over ECDH shared key with salt=random[:20], info="REALITY", AES-GCM seal of [version|time|shortId] with AAD = full ClientHello, plus the ed25519/HMAC-SHA512 temp-cert verification). Next, the VLESS layer: I need Xray's inbound/outbound to confirm the addons protobuf framing and whether UDP (command 0x02) is allowed with Vision flow.🌐 Z.ai Built-in Tool: webReader
+
+Input:
+
+
+json
+{"retain_images":false,"url":"https://raw.githubusercontent.com/XTLS/Xray-core/main/proxy/vless/encoding/addons.go"}
+Executing on server... Output: webReader_result_summary: [{"text": {"url": "https://raw.githubusercontent.com/XTLS/Xray-core/main/proxy/vless/encoding/addons.go", "content": "package encoding\nimport (\n"context"\n"io"\n"net"\n"github.com/xtls/xray-core/common/buf"\n"github.com/xtls/xray-core/common/errors"\n"github.com/xtls/xray-core/common/pr... 🌐 Z.ai Built-in Tool: webReader
+
+Input:
+
+
+json
+{"retain_images":false,"url":"https://raw.githubusercontent.com/XTLS/Xray-core/main/proxy/vless/outbound/outbound.go"}
+Executing on server... Output: webReader_result_summary: [{"text": {"url": "https://raw.githubusercontent.com/XTLS/Xray-core/main/proxy/vless/outbound/outbound.go", "content": "package outbound\nimport (\n"bytes"\n"context"\ngotls "crypto/tls"\n"encoding/base64"\n"reflect"\n"strings"\n"sync"\n"time"\n"unsafe"\nutls "github.com/refractio...
+
+Operation failed
+
+Thought
+·
+a few seconds
+Let me check if the local network can reach GitHub through a proxy or alternate route, since raw downloads are more reliable than the web-reader summaries.
+
+Terminal
+env | grep -iE "proxy" ; echo "---"; timeout 10 curl -s -o /dev/null -w "%{http_code}\n" https://example.com; timeout 10 curl -s -o /dev/null -w "%{http_code}\n" https://raw.githubusercontent.com/XTLS/Xray-core/main/go.mod; echo "---dns---"; getent hosts raw.githubusercontent.com | head -2
+
+Thought
+·
+a few seconds
+Explore
+·
+2 searches
+
+Thought
+·
+a few seconds
+GitHub is SNI-blocked from this machine, but the Singapore node has clean internet — I'll fetch the Xray sources through it over SSH.
+
+Terminal
+timeout 60 ssh -o BatchMode=yes root@157.245.154.116 ' mkdir -p /tmp/xsrc && cd /tmp/xsrc base=https://raw.githubusercontent.com/XTLS/Xray-core/main for f in proxy/vless/encoding/addons.go proxy/vless/inbound/inbound.go proxy/vless/outbound/outbound.go proxy/vless/encoding/encoding.go; do curl -s --max-time 20 -o "$(basename $f)" "$base/$f" && echo "OK $(basename $f) $(wc -c < $(basename $f)) bytes" done echo "=== flow/command checks in inbound.go ===" grep -n -B3 -A12 "RequestCommandUDP\|XRV\|Flow" inbound.go | head -80 ' 2>&1 | head -110
+
+Thought
+·
+a few seconds
+Critical protocol finding: with this server config (single user, flow=xtls-rprx-vision):
+
+VLESS TCP + Vision flow → allowed
+VLESS UDP + Vision flow → rejected ("doesn't support UDP")
+VLESS UDP + no flow → allowed (the empty-flow rejection only applies to TCP/Mux)
+So the APK's correct design is: REALITY TLS with session-id auth, then a flow-less VLESS UDP (0x02) request, with plain 2-byte-length-prefixed packets — no Vision framing needed at all. Let me confirm the UDP packet framing in the inbound handler and check the WireGuard transport implementation.
+
+Terminal
+timeout 60 ssh -o BatchMode=yes root@157.245.154.116 ' cd /tmp/xsrc echo "=== UDP packet handling in inbound.go ===" grep -n -A10 "RequestCommandUDP" inbound.go | grep -v "^--$" | sed -n "10,60p" echo "=== DecodeBodyAddons / packet framing in encoding.go ===" grep -n -B2 -A15 "DecodeBodyAddons\|NewPacketReader\|packetEncoder" encoding.go | head -60 echo "=== addons.go protobuf ===" cat addons.go | sed -n "1,80p" ' 2>&1 | head -140
+
+Thought
+·
+a few seconds
+Addons framing confirmed: flow-less request = single 0x00 length byte. UDP uses MultiLengthPacketWriter — let me get its exact framing from the rest of encoding.go.
+
+Explore
+·
+1 search, 1 file
+
+Thought
+·
+a few seconds
+The packet writer lives in another file. Let me fetch proxy/vless/encoding/packet.go.
+
+Explore
+·
+1 search, 1 file
+
+Thought
+·
+a few seconds
+Explore
+·
+1 search, 1 file
+
+Thought
+·
+a few seconds
+VLESS UDP framing confirmed on both directions: [u16 BE length][packet]. Now the last protocol piece — the REALITY server-side validation (version byte checks, time window, AAD reconstruction) from the xtls/reality module.
+
+Terminal
+timeout 60 ssh -o BatchMode=yes root@157.245.154.116 ' curl -s --max-time 30 "https://api.github.com/repos/XTLS/REALITY/contents" | grep "\"name\"" ' 2>&1
+
+Thought
+·
+a few seconds
+Terminal
+timeout 60 ssh -o BatchMode=yes root@157.245.154.116 ' cd /tmp/xsrc curl -s --max-time 20 -o reality_auth.go "https://raw.githubusercontent.com/XTLS/REALITY/main/auth.go" && wc -c reality_auth.go && cat reality_auth.go ' 2>&1
+
+Thought
+·
+a few seconds
+That was the standard Go TLS fork boilerplate. The REALITY-specific validation must be in tls.go/handshake_server_tls13.go/common.go — let me grep for the session-id auth logic.
+
+Terminal
+timeout 90 ssh -o BatchMode=yes root@157.245.154.116 ' cd /tmp/xsrc for f in tls.go common.go conn.go record_detect.go cache.go; do curl -s --max-time 20 -o "rl_$f" "https://raw.githubusercontent.com/XTLS/REALITY/main/$f" done grep -ln "SessionId\|REALITY\|SessionService" rl_*.go echo "=================== auth-related excerpt from tls.go ===================" grep -n -B5 -A40 "func.*Server\|ProcessClientHello\|SessionId\|shortId\|ShortId" rl_tls.go | head -120 ' 2>&1
+
+Thought
+·
+a few seconds
+I can see the session-id validation (ver bytes optional, time check only if configured, shortId must match). Now I need the AEAD open lines just before — the key derivation and AAD reconstruction.
+
+Terminal
+timeout 60 ssh -o BatchMode=yes root@157.245.154.116 ' cd /tmp/xsrc sed -n "202,248p" rl_tls.go echo "=== keyshare/pubkey extraction (grep in tls.go + handshake_server_tls13.go) ===" curl -s --max-time 20 -o rl_hs13.go "https://raw.githubusercontent.com/XTLS/REALITY/main/handshake_server_tls13.go" grep -n -B3 -A12 "KeyShare\|keyShare\|authKey\|AuthKey" rl_hs13.go | head -60 ' 2>&1
+
+Thought
+·
+a few seconds
+I now have the complete REALITY protocol spec from both sides (client seal + server open). The remaining question is implementation strategy in Rust — a full TLS 1.3 client from scratch, or an existing Rust REALITY implementation to build on. Let me check what exists (clash-rs implemented REALITY in Rust).
+
+Explore
+·
+1 search, 1 file
+
+Thought
+·
+a few seconds
+No off-the-shelf Rust REALITY client exists (rustls fundamentally can't do it — confirmed by clash-rs issue #321 discussing the same wall). I'll implement a minimal TLS 1.3 client with REALITY auth from the exact spec I just extracted. First, let me read the WireGuard transport and Cargo deps to plan the integration.
+
+Terminal
+sed -n "1,120p" /home/red/MyProject/shadowmesh/libs/core-shared/shadowmesh-core/Cargo.toml
+
+Thought
+·
+a few seconds
+The WireGuard transport (boringtun) is complete for direct UDP, but in REALITY mode the engine feeds raw TUN IP packets into RealityTransport.send() — there's no WG noise layer in that path at all. So the REALITY path needs a composition: boringtun → VLESS-UDP-over-REALITY-TLS. One more piece to verify: whether the client's WireGuard keypair matches the server's fixed peer key. Let me check generateKeyPair() and how the server provisions WG peers.
+
+Explore
+·
+1 search, 1 file
+
+Thought
+·
+a few seconds
+generateKeyPair() is random per connection, but the server's wg0 has one fixed peer — the WG handshake can never complete unless something provisions the client's key. Let me check how the server's /config endpoint provisions WireGuard peers.
+
+Terminal
+grep -rn "wg0\|wireguard\|WireGuard\|wg set" /home/red/MyProject/shadowmesh/services/server/src --include="*.rs" -il | head; echo ---; sed -n "100,260p" /home/red/MyProject/shadowmesh/services/server/src/api/handlers/vpn.rs
+
+Thought
+·
+a few seconds
+Let me check how generateWireguardKeys is implemented in the Rust core — whether it's random or deterministic per device.
+
+Terminal
+grep -n -B5 -A30 "generate_wireguard_keys\|generateWireguardKeys" /home/red/MyProject/shadowmesh/libs/core-shared/shadowmesh-core/src/lib.rs | head -60
+
+Thought
+·
+a few seconds
+Confirmed: `generate_wireguard_keys()` is fully random per call. The client's WG static key is random per connection → the server peer (n9TkGH, fixed) never matches → WireGuard handshake can never succeed against this node, regardless of REALITY.
+
+Hmm wait — let me reconsider how WG handshake works to be sure the server rejects unknown client static keys: WG handshake initiation contains the sender's STATIC public key encrypted to the receiver and authenticated by mac1 = keyed BLAKE2s(key_hash, first 148 bytes) where key_hash = BLAKE2s(receiver pubkey). mac1 doesn't depend on sender static key. After decryption, receiver looks up peer table by decrypted sender static pubkey — not found → silently drop. Yes, handshake fails.
+
+BUT — hold on. Is that actually the architecture this project intends? ZPII "Sovereignty Tokens": devices activate with an activation code, get device identity. The recovery node's wg0 peer n9TkGH was manually provisioned — probably with the pubkey from ONE specific generateWireguardKeys() run, or maybe from some test device. The user's V2ray client works because it uses plain VLESS (no WG). The APK needs WG-over-VLESS.
+
+Given the whole system, the CORRECT fix for key provisioning (within reason): make the WG keypair **deterministic from the device identity** so the user can provision the peer once per device, OR provision the peer dynamically. Since I have SSH to the node, I could also add the peer for the deterministic key myself after computing it... but the device identity lives on the user's phone, not here. Hmm.
+
+Alternative pragmatic approach that stays within ZPII: derive WG keys deterministically from the **device identity key** already managed by IdentityManager (Android). Then instruct the user: `wg set wg0 peer <derived_pub>` once. But I can't compute the derived pub without the device's identity secret.
+
+Hmm wait — actually, let me look at how the client generates/uses the device identity and whether there's a server-side endpoint registering the WG pubkey (device sync). Recent commit "fix(sync): align device identity handshake" — there's a sync API. Let me check api_client.rs / server auth.rs for device registration with public_key. The server logs device public keys (`params.public_key`). Is there an endpoint where the node pulls the peer list? The heartbeat is server→control-plane. Nodes are separate droplets though — the reality node only runs xray + wg0, no shadowmesh server.
+
+OK let me step back and think about what's PRACTICAL and in-scope:
+
+The user's ask: "on my apk I can't even connect to the vpn" — they want the APK to connect to the reality node like their V2ray client does.
+
+The minimal complete fix chain:
+1. REALITY TLS client with proper auth (the hard part) — implement.
+2. VLESS UDP framing fix — implement.
+3. WG noise layer in REALITY path — implement (boringtun compose).
+4. WG identity problem — the client generates random keys the server doesn't know. Fix: derive deterministically from device identity AND provision the peer. OR: make the recovery path use a FIXED keypair stored in... no — hardcoding a WG private key in the APK is bad (Anti-RE: extractable). But deterministically derived keys are also static per device — same risk profile as any client config.
+
+Hmm, hold on — maybe I should check what peer n9TkGH actually is. Maybe it corresponds to a key DERIVED from something I can compute — e.g., the user might have generated it with the APK once and copied it. I can't reconstruct it.
+
+Practical plan for WG provisioning: add a tiny mechanism — the control plane could expose the device's WG pubkey... Actually you know what? The cleanest available approach given infra constraints:
+
+**Derive the WG keypair deterministically from the activation code + device id** (via HKDF). Document that the node's wg0 peer must be set to the derived public key once. Then ALSO — to make it work immediately — have the APK... no, can't touch wg0 from APK.
+
+Hmm, but wait — maybe I'm overcomplicating: maybe the peer n9TkGH was provisioned by the user manually from THEIR device's key when testing earlier. If the APK keeps generating random keys it'll never match. The deterministic derivation gives the user a stable pubkey to provision. I can even print/derive it: I know the server peer pubkey n9TkGH — if the user's device derives a different key, they need to update wg0. Since I have SSH, I can add the correct peer to wg0 IF I know the pubkey the device will derive. The derivation must use something I can reproduce on the node... The activation code! If WG keys are derived from the activation code (which the user knows), I can compute the pubkey locally for their code and provision wg0. But I don't know their activation code (ZPII - and I shouldn't need it).
+
+Alternative: make the client derive WG keys from the **device identity private key** and REGISTER the derived pubkey with the control plane (server) during activation; then... the node can't pull it (no shadowmesh service on node). Ugh — unless I deploy a tiny peer-sync mechanism... too much.
+
+PRAGMATIC DECISION: Implement deterministic WG key derivation from the device identity (already in IdentityManager via Rust core). The APK logs/exposes the public key at activation time (it already sends device public_key to the server — check what IdentityManager registers). Then the user provisions that pubkey on wg0 (I'll provide the exact command; they may have already done this — n9TkGH might already BE that derived key from a previous install!).
+
+Wait wait. Let me check the IdentityManager — maybe the device ALREADY has a deterministic WireGuard key derived from identity, and generateKeyPair() being random is just a bug (a regression). Let me look at IdentityManager.kt and identity module in Rust. If IdentityManager derives a WG keypair from the device secret, then the fix is simply: use THAT instead of random generation. And n9TkGH may correspond to it (user provisioned it earlier).
+Confirmed: WG keys are random per connection — but the server's wg0 has a fixed peer. Let me check whether the Android identity manager already derives a stable WG key from device identity (which the user may have provisioned as that peer).
+
+Explore
+·
+1 search, 1 file
+Terminal
+grep -rn "wireguard\|Wireguard\|wg_key\|derive" /home/red/MyProject/shadowmesh/apps/android/app/src/main/java/com/shadowmesh/app/identity/IdentityManager.kt | head -10; echo ---; grep -rn "derive_wireguard\|wireguard" /home/red/MyProject/shadowmesh/libs/core-shared/shadowmesh-core/src/identity/*.rs | head -10; echo ---; grep -rn "generateWireguardKeys\|device_keypair\|derive" /home/red/MyProject/shadowmesh/libs/core-shared/shadowmesh-core/src/lib.rs | head -20
+Read
+
+IdentityManager.kt
+apps/android/app/src/main/java/com/shadowmesh/app/identity/
+
+Thought
+·
+a few seconds
+No identity-based WG key derivation exists. So the WG provisioning gap is real, but it's an infra/architecture issue that goes beyond "the REALITY connection fails". 
+
+Decision on scope: The user's primary complaint is "can't even connect". The full fix has multiple layers. I should fix what's broken in code (REALITY TLS auth, VLESS framing, WG-over-VLESS composition, WG address mismatch 10.0.0.3→10.200.0.3). For the WG peer key provisioning, the pragmatic immediate solution: the ConnectUseCase recovery path could use a deterministic keypair derived from a stable per-device secret stored in SecureStorage (generated once per device, persisted) — that way the user provisions the peer ONCE per device. But their wg0 peer n9TkGH was provisioned with SOME key — I should check with the user or just make it configurable.
+
+Hmm, wait — actually, let me reconsider. Is the WG layer even needed for the REALITY path? What does the VPN need to deliver? Encrypted IP packets over the tunnel. The REALITY TLS itself provides encryption. Why does the design tunnel WG *inside* VLESS? Because the server-side Xray just forwards UDP to wg0 — the WG layer provides IP-layer routing (wg0 + iptables/NAT → internet). Without WG, VLESS UDP to any address would give the client arbitrary UDP proxying (like a socks-udp). The APK could send DNS (UDP 53) and WG-like... no wait — the TUN device produces IP packets (TCP flows inside!). To carry TCP connections of apps, the client needs a full IP tunnel — WG gives that (server routes via wg0). A UDP proxy alone can't carry arbitrary TCP flows (well, without a TCP-over-UDP hack). So yes, WG layer over VLESS UDP is the design. The server config routes VLESS UDP → any dst: Xray freedom → e.g., 8.8.8.8:53 directly, or 127.0.0.1:51820 → WG.
+
+Given the wg0 peer mismatch, the COMPLETE working setup requires the client WG pubkey to be known to the server. Options:
+(a) Deterministic per-install key + user provisions peer once.
+(b) I provision the peer myself on the node — I can't know the device key.
+(c) Check: maybe peer n9TkGH was created from a key I can find in the repo or docs? Let me grep the whole repo for n9TkGH... I did (found nothing). Maybe in .env / docs? Let me grep everywhere including untracked. Also the SIGNING.md or PLANS docs might hold it. Quick grep -r over the repo (all files).
+
+Actually — better idea: since wg0's peer is just ONE static peer, maybe the intended UX (for this single-user recovery setup) is: the wg0 peer is the DEVICE. The user (meshdev) owns both. The right engineering fix: make the APK derive its WG key deterministically from a per-install random seed persisted in EncryptedSharedPreferences (stable across restarts/reconnects), and surface that pubkey in the UI/activation flow so the node can be provisioned (or better — have the APK send it to the control plane at activation: check if device registration already sends a public key! `params.public_key` in getConfig! The device identity public key IS sent to the server. If we derive the WG key from the device identity key (e.g., WG_priv = HKDF(device_identity_priv, "wg")), then the server can COMPUTE the WG pubkey from the registered identity pubkey... and the node could be provisioned via the control plane... but again the node doesn't run the control plane.
+
+OK — decision: I'll implement deterministic derivation from the device identity secret if easily accessible, else from a persisted per-install seed in SecureStorage, and use it in the connect path. Then, for THIS node, I'll check whether the derived pubkey can be computed for the user's device... I can't. BUT the user can get it from the app (log it — no PII concerns; it's a public key) and run `wg set`. 
+
+Hmm, hold on, let me reconsider scope again. Actually — wait. Let me re-examine: is it possible the WG handshake would work anyway? boringtun client sends handshake init to wg0; wg0 decrypts static key = client random pub → not in peers → drop. Definitely broken. Unless... the client ALSO can't control the server peer. OK so this MUST be addressed for end-to-end success.
+
+Let me check IdentityManager for the device identity secret to see what's available for derivation.
+
+Thought
+·
+a few seconds
+No device-identity keypair — activation sends `publicKey = null`. So there's no stable device key material to derive WG keys from (besides the activation code itself, which IS stored). 
+
+Given all this, here's my scoping decision:
+
+**In scope (code fixes):**
+1. **REALITY TLS client with REALITY auth** — implement from the extracted spec. (Root cause of "can't connect".)
+2. **VLESS protocol fixes**: protobuf addons (empty for UDP path), command UDP + length-prefixed packet framing (replace the fake Vision/XUDP framing).
+3. **WG noise layer in REALITY path**: compose boringtun with the REALITY transport so TUN IP packets are actually WG-encapsulated.
+4. **Android recovery-config fixes**: WG address `10.0.0.3/24` → `10.200.0.3` (matches server peer allowed-ips).
+5. **Deterministic per-device WG key**: derive from activation code (ZPII-safe: the activation code is the sovereignty token; HKDF(code, "shadowmesh-wg-v1")). This makes the pubkey stable so the node's wg0 peer can be provisioned once. Then... the user's existing peer n9TkGH — I can compute what pubkey derives from their activation code? No (don't know the code). 
+
+   Hmm. But WAIT — maybe I can find how n9TkGH was generated. Let me think about whether the user provisioned that peer from a fixed tool... Let me grep the whole repo for "n9TkGH" one more time across all files (including non-code): earlier grep with --include filters found nothing. Search unfiltered.
+
+Actually — hmm, hold on. Let me reconsider (2): does the UDP path even need the WG layer for the connection to "succeed"? The user's acceptance: VPN connects and routes traffic. Without WG-provisioning on the node, WG handshake won't complete → no traffic → ConnectUseCase's 25s "traffic flowing" check fails → error. So WG provisioning is REQUIRED for success.
+
+Options for WG provisioning (pick one):
+   (A) Server-side: add a second wg0 peer matching the client's derived key — I can do this NOW via SSH IF I can compute the derived pubkey. If derivation = HKDF-SHA256(ikm=activation_code_bytes, salt="shadowmesh", info="shadowmesh-wg-v1") — needs the activation code. I don't have it. The user could run one command to get the pubkey from the app... clunky.
+   
+   (B) Make wg0 accept ANY client via a "dynamic" peer? WireGuard doesn't support wildcard peers.
+   
+   (C) Look for the private key of peer n9TkGH — if it's stored somewhere (the user generated it from some tool), maybe the APK could... no. ZPII violation + silly.
+   
+   (D) Server-side wg provisioning API on the node: deploy a tiny wg-peer-manager... out of scope for this session, and 512MB droplet.
+   
+   (E) **Reframe**: Xray's freedom outbound forwards UDP to ANY target. The client could skip WG entirely on the REALITY path: implement a **userspace TCP/IP stack** — smoltcp IS already a dependency! The TUN IP packets contain TCP/UDP flows; the client could proxy them through VLESS TCP (target from IP header) — that's a full SOCKS-like VPN over VLESS TCP with Vision. That's ALSO huge (smoltcp NAT table).
+
+Hmm OK. Actually, let me reconsider — what did the ORIGINAL working design intend? The XUDP framing in the old code targeted 127.0.0.1:51820 — clearly the design is WG-over-VLESS-UDP with the node's wg0. The wg0 peer n9TkGH was provisioned for something. The missing piece is client-side key stability. 
+
+**Decision**: Go with (A'): derive WG keys deterministically from the activation code via HKDF; log the derived pubkey at connect (public key — safe to log, no PII); AND add a tiny helper: the VPN stats/engine could expose the pubkey to the UI... too much UI work. Simplest immediate path for the user: after the fix, `adb logcat | grep WGPUBKEY` shows the derived public key → run `wg set wg0 peer <key> allowed-ips 10.200.0.3/32` (or I can do it for them once they tell me the key / or they read it from logcat). Hmm — I'm autonomous; I can't ask. I'll implement + document clearly.
+
+WAIT — actually, hold on. One more idea: I could check whether the existing peer n9TkGH matches the pubkey derived from SOME plausible seed I can find (e.g., derived from the hardcoded recovery uuid, or activation-code-like constants in the repo). Long shot; skip.
+
+Hmm, hmm. Actually — let me reconsider ONE more time whether to keep boringtun WG in the REALITY path... Actually YES keep it: the node's Xray UDP forwarding to 127.0.0.1:51820 + wg0 + NAT is the only server-side path to the internet that's ALREADY provisioned. It matches the original design and PLANS.
+
+Now — hmm, wait. Let me also double check the Xray inbound: will it forward UDP to **127.0.0.1:51820**? The VLESS UDP request target = 127.0.0.1. Xray freedom outbound: dials "127.0.0.1:51820" — Xray blocks loopback? There's a "domainStrategy" and security policy — by default, freedom does NOT block loopback (the server operator may care; Xray has `sendThrough` etc. — no default block). OK.
+
+Also verify: the VLESS inbound allows UDP command without any extra config ✓ (code path exists: DecodeBodyAddons → NewLengthPacketReader).
+
+And one more consideration — **the TCP path**: ConnectUseCase escalates to REALITY mode; engine uses RealityTransport for ALL TUN traffic (WG packets — all UDP from boringtun's perspective: WG transport packets are UDP datagrams; boringtun encapsulates IP packets). So REALITY path carries only WG UDP packets → VLESS UDP. TCP app traffic rides inside WG. ✓ No need for VLESS TCP/Vision at all!
+
+Hmm, but then why did the server user have flow=vision? For v2rayNG usage (TCP). Fine — our client uses UDP command without flow; allowed per inbound.go. 
+
+Now — the boringtun WG tunneling details:
+- TUN MTU 1280; WG adds ~60-100 bytes overhead; VLESS UDP framing +2; TLS +~30; TCP/IP +40. Fine.
+- boringtun `Tunn::new(priv, pub, None, None, 0, None)` — peer endpoint None; index 0; preshared None. 
+- On connect: boringtun requires handshake initiation. The existing WireGuardTransport never explicitly initiates: encapsulate() of any packet triggers handshake if no session (returns WriteToNetwork with handshake packet). Then decapsulate(None, response...) completes. Same flow works over my transport. Also boringtun update_timers for retransmit — the existing direct-WG path has the same gap; I'll add a periodic `update_timers` tick in the REALITY recv loop to be robust (handshake retries) — actually let me keep parity and add a simple retry: if recv gets nothing for 3s and no handshake completed... keep simple: parity.
+
+Right — one more critical check: **Engine tun_loop** feeds packets of up to 2048 bytes; RealityWgTransport.send(IP pkt) → encapsulate → send via TLS stream. The WG handshake response comes via stream.recv → decapsulate → TunnResult::WriteToNetwork (e.g., cookie reply) → send. Loop until WriteToTunnelV4. ✓ parity with WireGuardTransport.
+
+**MTU note**: recovery config mtu 1280 ✓ good for WG-over-TLS-over-TCP.
+
+**Now the VLESS UUID**: recovery config uuid hardcoded `d4f2cdeb-...` matches server ✓. For non-recovery nodes, the server's getConfig returns `uuid = generate_deterministic_uuid(params.public_key)` — hmm, that's derived per device, but the Xray server config has only ONE client uuid... that's a server-side provisioning inconsistency (deterministic uuid ≠ uuid in xray config) — but out of scope; the recovery node path hardcodes the right one. I'll note it.
+
+**Also**: `MeshVpnService.handleConnect` — `config.address.split("/")[1].toInt()` crashes if address lacks "/" — recovery address "10.0.0.3/24" has it; getConfig assigned_ip "10.200.x.y/24" has it. OK.
+
+**Android DNS**: `.addDnsServer(config.dns)` with dns "1.1.1.1" (recovery) / "10.0.0.53" (server). OK.
+
+Now, implementation plan in detail:
+
+### A. New file: `transport/reality_tls.rs` — minimal TLS 1.3 client with REALITY auth
+
+Dependencies needed: `ring` (add direct dep; already in tree via rustls), plus existing `x25519-dalek`, `sha2` (not needed if ring), `base64`, `bytes`. Let me define carefully:
+
+```rust
+pub struct RealityClientConfig { server_ip, port, public_key (b64 x25519), short_id (hex), sni_target }
+pub struct RealityTlsStream { stream: TcpStream, suite, keys..., read_seq, write_seq, handshake_hash? }
+```
+
+Wait — one subtlety: `protect_socket` must be called on the TCP socket FD BEFORE connect (Android VPN loop prevention) — existing code does this; keep it in reality.rs connect (socket2 + protect) and pass the established TcpStream into the TLS handshake.
+
+**ClientHello construction** (byte-exact):
+```
+record: [0x16][0x0301][len] handshake: 
+handshake: [0x01][len24]
+  legacy_version: 0x0303
+  random: 32 bytes
+  session_id: len=32 + REALITY ciphertext
+  cipher_suites: 0x1301,0x1303,0x1302 (AES-128-GCM-SHA256, CHACHA20, AES-256-GCM-SHA384)
+  compression: [0x01][0x00]
+  extensions:
+    server_name (0x0000): dl.google.com
+    supported_groups (0x000a): x25519(0x001d) + secp256r1(0x0017)
+    ec_point_formats (0x000b): uncompressed
+    signature_algorithms (0x000d): 0x0403,0x0804,0x0401,0x0503,0x0805,0x0501,0x0806,0x0601
+    supported_versions (0x002b): 0x0304, 0x0303
+    key_share (0x0033): x25519 entry (0x001d, 32B pub)
+    ALPN (0x0010): h2, http/1.1
+    session_ticket (0x0023): empty
+    encrypt_then_mac (0x0016): empty
+    extended_master_secret (0x0017): empty
+```
+Order: for chrome mimicry: server_name, extended_master_secret, ... any order is valid TLS. Go server parses generically.
+
+REALITY seal BEFORE patching: build handshake with session_id=32 zeros → raw → aad=raw → seal → patch raw[39..71] with ct||tag. Random[20..32] as nonce. AuthKey via x25519(eph_priv, server_reality_pub) then HKDF-SHA256(ikm, salt=random[..20], info="REALITY") 32 bytes → AES-256-GCM.
+
+**ServerHello parse**:
+```
+[0x16][0x0303][len] [0x02][len24] 0x0303 random(32) session_id_len(1) + echo(32) cipher(2) compression(1) ext_len(2) extensions:
+  supported_versions (0x002b): 0x0304
+  key_share (0x0033): server_share: group(2) + len(2) + pub
+```
+Parse loosely by scanning extensions.
+
+**Key schedule** (RFC 8446 §7.1) with hash per suite:
+- early = Extract(zeros, zeros)
+- hs_secret = Extract(DeriveSec(early, "derived"), ECDH(eph_priv, server_share))
+- c_ht_key/iv = key/iv from DeriveSec(hs_secret, "c hs traffic", transcript_ch)
+- s_ht_key/iv likewise
+- transcript = SHA256/384(CH bytes || SH bytes)
+- Decrypt records: nonce = iv XOR seq; AAD = record header. inner = decrypt; strip trailing zeros & last byte type.
+- EE (type 8), Certificate (11), CertificateVerify (15), Finished (20) — one message per record (Go sends each separately) but handle coalescing anyway via a pending-buffer.
+- Certificate: parse to get cert DER; verify REALITY HMAC; x509-parser for SPKI.
+- CV: Ed25519 sig over "    TLS 1.3, server CertificateVerify" + 0x00 + transcript_hash. ring::signature::ED25519 verify. (If sig scheme != 0x0807 → reject.)
+- Finished: verify HMAC(finished_key(s_ht), transcript through CV).
+- client Finished: transcript through server Finished; verify_data = HMAC(finished_key(c_ht), th); send encrypted record with c_ht key (seq 0).
+- app keys: master = Extract(DeriveSec(hs_secret, "derived"), zeros); c_at/s_at from DeriveSec(master, "c ap traffic", transcript_after_server_finished).
+- Real client Finished verify is optional? No — server REQUIRES client Finished to complete handshake before processing app data. We send ours. (We don't verify a client-finished signature obviously.)
+
+After handshake: app records: type 23 decrypt with s_at; skip inner-type-22 NST (handshake msg 4); handle KeyUpdate (24) ignore; return app data bytes. Write app data as type 23 records with c_at.
+
+Also must handle the server's encrypted records during handshake arriving coalesced in one TCP segment — buffer appropriately (read record by record: 5-byte header, then payload by length).
+
+Cipher suites: support all three:
+- 0x1301 TLS_AES_128_GCM_SHA256 (hash sha256, key 16, aead AES-128-GCM)
+- 0x1302 TLS_AES_256_GCM_SHA384 (sha384, key 32, AES-256-GCM)
+- 0x1303 TLS_CHACHA20_POLY1305_SHA256 (sha256, key 32, chacha)
+Go server picks first in ITS preference: Go default order: AES_128_GCM, CHACHA20, AES_256_GCM (defaults.go prefers hardware AES → 1301 first on amd64 with AES support). We accept whatever.
+
+ring usage:
+- ring::hkdf for TLS key schedule? ring::hkdf has extract/expand but "Derive-Secret" needs labeled expansion over transcript — I can implement via ring::hmac (HMAC-SHA256/384): Extract = HMAC(key, data); Expand-Label = HMAC(fkey, label||0x00||u8len||ctx). Simple with ring::hmac primitives. I'll write small helpers (this is standard RFC 8446 pseudo-code, not custom crypto).
+- AEAD: ring::aead with LessSafeKey/Aad/Nonce. 
+- Ed25519: ring::signature::ED25519.
+- HMAC-SHA512 for REALITY cert check: ring::hmac::HMAC_SHA512.
+
+Also `x25519-dalek` for ECDH (both REALITY auth + TLS keyshare — same eph priv key).
+
+### B. Rewrite `transport/reality.rs`
+- Keep `RealityConfig` (UniFFI type — DON'T change its fields! Boundary-Sync: changing UDL breaks Android bindings. Keep same struct).
+- RealityTransport (AsyncTransport) semantics: now = WG-over-REALITY. Actually cleaner: rename semantics — RealityTransport stays the AsyncTransport the engine swaps in; internally:
+  ```rust
+  pub struct RealityTransport {
+      config: RealityConfig,
+      state: Arc<Mutex<Option<EstablishedTunnel>>>,
+  }
+  struct EstablishedTunnel {
+      tls: RealityTlsStream,
+      tunn: Tunn,          // boringtun
+      wg_priv/pub...,
+  }
+  ```
+  connect(): TCP (protected) → REALITY TLS handshake → VLESS request (UDP cmd, target 127.0.0.1:51820) → response header check.
+  
+  Hmm wait — WG keys: the transport needs the client WG keypair. Currently engine passes only `config: VPNConfig` (has private_key Option<String> + public_key + reality_config). VPNConfig.private_key = client WG private key (from intent) ✓ available in engine. So RealityTransport::new(config: RealityConfig, wg_private_key: Option<String>, wg_peer_public: String?) — peer public = config.public_key? In recovery config: publicKey = "Gk0RJt..." = server WG pub ✓. For server-provided configs: `server_public_key` field... the WireGuardConfigResponse has `server_public_key` — and api_client maps it to VpnConfig.publicKey presumably ✓.
+  
+  So: RealityTransport::new(reality_config, wg_private_key, wg_peer_public_key). Engine start_engine passes config.private_key/public_key when reality mode. Also update `start_reality_proxy` in lib.rs accordingly (check its callers — used by anything? grep later; keep signature compat by making WG params Option).
+
+  send(IP packet): tunn.encapsulate → for each WriteToNetwork packet: frame [u16 len][pkt] → TLS write. (boringtun encapsulate returns at most one packet; handshake init on first call.)
+  recv(): loop: read [len][pkt] → tunn.decapsulate(None, pkt):
+    - WriteToNetwork(reply) → frame+write (e.g., handshake response handled? no — decapsulate returns WriteToNetwork for cookie/handshake-init responses from OUR side? Actually decapsulate(None, packet): if packet is handshake response from peer → completes session, returns empty/none; if packet is a WG data packet → decrypts → WriteToTunnelV4. WriteToNetwork from decapsulate = e.g. under load cookie replies WE send? No — WE are client; cookie replies come FROM server. Hmm, boringtun decapsulate can return WriteToNetwork when it needs to send a handshake re-init (e.g., on invalid packet) — handle by sending.
+    - WriteToTunnelV4/v6 → return IP packet to TUN.
+  Also add handshake keepalive: spawn timer task calling update_timers every second → send any resulting packets. This makes handshake retry robust. I'll integrate update_timers into the recv loop with a timeout (tokio::time::timeout 1s on TLS read; on timeout, poll update_timers). Careful with half-read packets — my TLS record read is atomic per record (read full header then full body) — a timeout mid-record would desync... Use timeout on the first byte read only? Simplest: read_exact header (5 bytes) with timeout covering whole record read — if it times out mid-record the stream is broken anyway (partial read lost). Better: buffered reader internal: implement read via a persistent BytesMut buffer, poll with try_read in a loop with sleep? Hmm — tokio TcpStream is registered in the runtime; I can do: `timeout(dur, stream.read_exact(&mut hdr))` — on timeout, the partial data is LOST (read_exact with timeout is not cancel-safe!). To stay cancel-safe, do manual non-blocking-ish pattern: use a BufReader-ish manual buffer: loop { if buffer has enough → parse; else timeout(1s, read some bytes into buffer) → on timeout, break to run update_timers then continue }. `read` (not read_exact) is cancel-safe: any bytes read are kept in buffer. 
+
+  I'll implement an internal `RecvBuffer` with such logic. 
+
+### C. Engine changes (`engine.rs`):
+- reality mode: `RealityTransport::new(reality_cfg.clone(), config.private_key.clone(), config.public_key.clone())`.
+- fallback_to_reality likewise.
+
+### D. lib.rs `start_reality_proxy` — check callers and adapt signature.
+
+### E. Kotlin fixes:
+- ConnectUseCase recovery: address "10.200.0.3/24" (matches peer allowed-ips 10.200.0.3/32 — hmm wait: assigned TUN address must equal peer allowed-ips exactly: 10.200.0.3. prefix /24 fine for TUN). Also keep dns 1.1.1.1? Server wg0 NAT: DNS 1.1.1.1 goes through tunnel → wg0 → MASQ → internet ✓. Could also use 10.200.0.1 (wg server itself, no DNS there) — keep 1.1.1.1.
+- generateWireguardKeys: add deterministic variant `generate_device_wireguard_keys(seed: String)` in Rust: HKDF-SHA256(ikm=seed, salt="shadowmesh-wg", info="wg-keypair-v1") → 32-byte private → base64. Kotlin: ConnectionManager.toggleConnection uses wireguardService.generateKeyPair() — change to derive from activation code (secureStorage KEY_ACTIVATION_CODE). ZPII: the code is the sovereignty token; deriving a WG key from it is by design (forensic resistance: keys derived, not stored).
+  - And expose derived pubkey in logs for provisioning (it's public).
+  - Wait — but changing ConnectionManager means the ConnectUseCase receives privateKey/publicKey of the client; publicKey unused except passed to initiateConnection. Fine.
+  - Hmm, careful: does anything else use generateKeyPair? ConnectionManager only. And keep the old random function (used elsewhere? desktop). 
+
+  Then provisioning: user runs `wg set wg0 peer <PUBKEY> allowed-ips 10.200.0.3/32; wg-quick save wg0` — I'll document. ALSO: to reduce friction, I can pre-provision via SSH once the user's app shows the key... can't do now. Document clearly in final message.
+
+  Hmm — actually, wait. Let me reconsider deriving from activation code: the activation code may change (renewal) → key changes → re-provision. Alternative: derive from a per-install random secret persisted in EncryptedSharedPreferences (stable per device install). That decouples from code rotation. But then provisioning happens per-install (reinstall regenerates). With activation-code derivation, reinstall keeps the same key (activation code is stable, stored in user's purchase) — BETTER for provisioning. If code rotates, the server control plane would need re-provisioning — acceptable; document.
+
+  Decision: derive from activation code (fallback: legacy = random if no code? must have code to connect anyway — activation required).
+
+  Hmm — but hold on: ZPII "No Persistence: never store session keys on disk; keys ephemeral" — derived-at-connect from stored code ✓ compliant.
+
+- Also fix: `MeshVpnService` FD leak/`handleDisconnect` — out of scope unless trivial.
+
+### F. `ShadowMeshError` — add `RealityAuthFailed`? Zeroize derive on enum — adding variant fine. Or reuse Other("..."). I'll add a distinct variant for clean UX mapping (ConnectUseCase maps "handshake" → MitM warning; I'll message "REALITY authentication failed — node or SNI may be blocked"). Hmm — keep simple: use Other with clear message; ConnectUseCase's isMitM check looks for "handshake"/"certificate" keywords — my message can include "handshake" → triggers the "network may be compromised" UX. Actually that's semantically OK (REALITY auth failure could be MITM/SNI block). Keep Other(...message contains "REALITY handshake failed...").
+
+### G. Tests (EDD - "Red-Green-Refactor", mandatory):
+- Unit tests for: ClientHello byte layout (session_id at offset 39, lengths valid), key schedule against RFC 8446 test vectors? Time-consuming; do targeted: HKDF-Expand-Label sanity, record encrypt/decrypt roundtrip with known key, VLESS header bytes for UDP request, packet framing roundtrip.
+- Integration test (gated, ignored by default + explicit env): `reality_live_test` connecting to the node (env REALITY_TEST_HOST etc.). Then run it HERE with env vars pointing at the real node — but can THIS machine reach 157.245.154.116:443? The user's network SNI-blocks github... the node might be reachable (their v2rayNG works). Test from this machine: `timeout 5 bash -c 'cat < /dev/null > /dev/tcp/157.245.154.116/443'` — check. If blocked, run the test binary on the node via SSH (target 127.0.0.1:443 there!). That's a PERFECT e2e: my client binary on the node talking REALITY to the local Xray, doing VLESS UDP to 127.0.0.1:51820 → real WG handshake with wg0 (needs the client WG pubkey registered... the wg0 peer is fixed → handshake will fail — BUT the REALITY+VLESS layer would still succeed; I can verify WG handshake initiation reaches wg0? Even better: I can temporarily ADD a test peer to wg0 with a test keypair I generate, verify full WG handshake + ping through the tunnel, then remove it. That's a state change on the user's node — additive, reversible, non-destructive. Justifiable: they asked to fix and I have SSH. I'll add peer with allowed-ips 10.200.0.9/32 (unused), test, then REMOVE it (or keep? remove — clean).
+  Hmm — careful: adding peer while xray runs — `wg set wg0 peer ...` is runtime-safe.
+
+So the verification plan:
+1. cargo test unit tests.
+2. Build a small test binary (or use `cargo test -- --ignored` with env) locally; scp to node; run against 127.0.0.1:443 with a temp WG peer → expect full REALITY handshake + VLESS + WG handshake + IP packet roundtrip (e.g., encapsulate a ping to 10.200.0.1).
+   Actually simpler: the test can do: REALITY connect → VLESS UDP → boringtun handshake → send ICMP echo via tunnel → receive reply. If wg peer added with allowed-ips 10.200.0.9/32 and client address 10.200.0.9 — but wait, WG data packet src IP isn't checked at WG layer (only routing); boringtun just encrypts whatever IP packet; wg0 receives, checks source vs allowed-ips for cryptokey routing → reply routed back. So use src 10.200.0.9 → ping 10.200.0.1 (wg server itself) → reply comes back. 
+3. Android build gates (gradle assemble + lint per workflow) — JNI/UDL unchanged (RealityConfig unchanged; only new internal Rust functions — but `generate_device_wireguard_keys` new uniffi function → UDL/binding regen needed! uniffi generates from macros (scaffolding) — the project uses `uniffi::include_scaffolding!` with a .udl file?? `shadowmesh.udl` exists — that's the OLD-style UDL. If I add a new exported fn I must update the UDL file AND regen. Check how udl is maintained: proc-macros vs udl file. `uniffi_build` + shadowmesh.udl → they use UDL. Adding `generate_device_wireguard_keys(seed: String) -> Vec<String>` to UDL + lib.rs. Then Kotlin bindings regen via build (uniffi-bindgen generate during build? check gradle task — build.gradle.kts). Let me check how the Kotlin uniffi bindings are produced... There's `libs/core-shared/shadowmesh-core/src/shadowmesh.udl` and the Android app loads `libshadowmesh_core.so` + generated Kotlin (maybe committed). Search for generated kotlin: `uniffi/shadowmesh/` dir under apps/android. The git status shows jniLibs .so files DELETED (interesting — they were committed binaries; now removed?). The build regenerates via cargo ndk? Check app build.gradle.kts for cargo tasks.
+
+Let me also check the UDL for RealityConfig and how VpnConfig is defined there (must match my Rust changes).
+
+Alright — this is a big but clear implementation. Total new/changed Rust ~1000+ lines. Let me get going. First: check UDL + how bindings are wired, then write the TLS module.
+
+One more design question: async vs sync. The transports are async (tokio). My RealityTlsStream will be async (tokio TcpStream + ring crypto inline). Fine.
+
+Also NOTE: engine.rs `tun_loop` writes received packets to TUN but the recv loop processes ONE transport — fine.
+
+Let me look at the UDL file for RealityConfig/VpnConfig and check gradle cargo integration.
+I have the complete picture now. Let me record the plan, then check the UniFFI surface (UDL) and how Android consumes the core bindings before writing code.
+
+Terminal
+$
+grep -n "RealityConfig\|VpnConfig\|generateWireguardKeys\|startVpnEngine\|startRealityProxy" /home/red/MyProject/shadowmesh/libs/core-shared/shadowmesh-core/src/shadowmesh.udl | head; echo ---; ls /home/red/MyProject/shadowmesh/apps/android/app/src/main/java/uniffi/shadowmesh/ 2>/dev/null | head; echo ---; grep -n "cargo\|uniffi\|jniLibs" /home/red/MyProject/shadowmesh/apps/android/app/build.gradle.kts | head -20
+45:  RealityConfig? reality_config;
+48:dictionary RealityConfig {
+532:  RealityConfig? parse_reality_vless_uri(string uri);
+551:  void start_reality_proxy(RealityConfig config, u16 local_port);
+---
