@@ -1,0 +1,31 @@
+build:
+  maxIssues: 0
+  excludeCorrectable: false
+  weights:
+    # complexity: 2
+    # LongParameterList: 1
+    # style: 1
+    # comments: 1
+
+style:
+  MaxLineLength:
+    active: true
+    maxLineLength: 120
+  WildcardImport:
+    active: true
+  UnusedPrivateMember:
+    active: true
+
+complexity:
+  TooManyFunctions:
+    active: true
+    thresholdInFiles: 20
+    thresholdInClasses: 20
+  LongParameterList:
+    active: true
+    functionThreshold: 10
+    constructorThreshold: 10
+
+potential-bugs:
+  UnsafeCallOnNullableType:
+    active: true

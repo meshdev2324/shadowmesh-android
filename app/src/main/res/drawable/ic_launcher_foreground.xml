@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- ShadowMesh Hexagonal Core -->
+    <!-- Represents the mesh topology: connected, geometric, stable. -->
+    <path
+        android:pathData="M54,32L73.05,43v22L54,76L34.95,65v-22z"
+        android:strokeWidth="1.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.1" />
+
+    <path
+        android:pathData="M54,20L83.44,37v34L54,88L24.56,71v-34z"
+        android:strokeWidth="0.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.05" />
+
+    <!-- Main Signal Indicator -->
+    <path
+        android:pathData="M54,40L66.12,47v14L54,68L41.88,61v-14z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54" android:startY="40"
+                android:endX="54" android:endY="68"
+                android:type="linear">
+                <item android:offset="0" android:color="#FF6366F1" />
+                <item android:offset="1" android:color="#FFA855F7" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Central Node Point -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M52,54a2,2 0,1 1,4 0a2,2 0,1 1,-4 0" />
+</vector>
