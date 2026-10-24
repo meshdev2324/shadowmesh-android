@@ -1,0 +1,424 @@
+package com.shadowmesh.app.ui.screens
+
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.shadowmesh.app.ConnectionInteractionMethod
+import com.shadowmesh.app.R
+import com.shadowmesh.app.VPNManagerViewModel
+import com.shadowmesh.app.VPNUiState
+import com.shadowmesh.core_vpn.CoreUtils.formatBytes
+import com.shadowmesh.ui_kit.components.*
+import uniffi.shadowmesh.ConnectionStatus
+import uniffi.shadowmesh.TrafficModePreference
+
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+
+/**
+ * Height reserved at the bottom of the portrait status column for the floating
+ * navigation bar (72dp bar + 16dp margin = 88dp, rounded up). Without this the
+ * slide-to-connect control renders underneath the nav and stops receiving
+ * touches.
+ */
+private val BOTTOM_NAV_INSET = 96.dp
+
+/**
+ * The main dashboard for the VPN.
+ * SOP 02: One-tap connection, obvious state, human-centric.
+ */
+@Composable
+fun StatusScreen(
+    viewModel: VPNManagerViewModel,
+    uiState: VPNUiState,
+    onToggleConnection: () -> Unit,
+    onOpenNodeSelection: () -> Unit,
+    onOpenAccount: () -> Unit,
+    onOpenModeSelector: () -> Unit,
+    modifier: Modifier = Modifier,
+    isExpanded: Boolean = false,
+) {
+    val context = LocalContext.current
+    val isConnected = uiState.status == ConnectionStatus.CONNECTED
+    val isConnecting = uiState.isConnecting
+    val themeColor = Color(uiState.themeColor)
+    val haptic = LocalHapticFeedback.current
+
+    val stableConnectionText = stringResource(R.string.status_connected)
+    val syncingMeshText = stringResource(R.string.status_sync)
+
+    // Errors render on the shared AlertHost (RFC-028); nothing screen-local here.
+
+    Box(modifier = modifier.fillMaxSize()) {
+        if (isExpanded) {
+            // High-Fidelity Two-Pane Layout for Tablets/Foldables
+            Row(
+                modifier = Modifier.fillMaxSize().padding(32.dp),
+                horizontalArrangement = Arrangement.spacedBy(48.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Left Pane: The Orb (Physical Core)
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    OrbSection(uiState, isConnected, isConnecting, themeColor)
+                }
+                
+                // Right Pane: The Controls (Command Logic)
+                Column(
+                    modifier = Modifier.weight(1.2f),
+                    verticalArrangement = Arrangement.spacedBy(24.dp)
+                ) {
+                    NodeAndSessionCards(uiState, isConnected, isConnecting, themeColor, haptic, onOpenNodeSelection, onOpenModeSelector, isExpanded)
+                    ControlSection(uiState, isConnected, themeColor, haptic, { onToggleConnection() })
+                }
+            }
+        } else {
+            // Standard Portrait Mobile Layout
+            //
+            // The orb is the only elastic element: it absorbs (and gives up)
+            // vertical slack via weight(1f, fill = false) so the fixed-height
+            // control section can never be coerced by the Column. Previously the
+            // 260dp orb was rigid, so on an 800dp-tall screen the Column ran out
+            // of room and shrank the last child — the slide-to-connect track
+            // measured 48dp instead of 64dp with its label flattened to 4dp.
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = BOTTOM_NAV_INSET)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                HeaderSection(uiState, themeColor, onOpenAccount)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false),
+                    contentAlignment = Alignment.Center
+                ) {
+                    OrbSection(uiState, isConnected, isConnecting, themeColor)
+                }
+                NodeAndSessionCards(uiState, isConnected, isConnecting, themeColor, haptic, onOpenNodeSelection, onOpenModeSelector, false)
+                ControlSection(uiState, isConnected, themeColor, haptic, { onToggleConnection() })
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeaderSection(uiState: VPNUiState, themeColor: Color, onOpenAccount: () -> Unit) {
+    StaggeredContainer(index = 0) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(top = 12.dp, bottom = 12.dp),
+            color = Color.Transparent,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    val primaryLabel = if (uiState.isCamouflageEnabled) "SECURE NOTES" else "SHADOW MESH"
+                    Text(
+                        primaryLabel,
+                        style = MaterialTheme.typography.labelLarge.copy(color = Color.White.copy(alpha = 0.9f)),
+                    )
+                    Text(
+                        "COMMAND CONSOLE",
+                        style = MaterialTheme.typography.labelSmall.copy(color = themeColor.copy(alpha = 0.4f)),
+                    )
+                }
+                
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    IconButton(
+                        onClick = onOpenAccount,
+                        modifier = Modifier.size(44.dp).clip(CircleShape).shadowMeshGlass(radius = 22f, baseColor = Color.White.copy(alpha = 0.1f)),
+                    ) {
+                        Icon(Icons.Outlined.VpnKey, contentDescription = "Account", tint = Color.White.copy(alpha = 0.7f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrbSection(uiState: VPNUiState, isConnected: Boolean, isConnecting: Boolean, themeColor: Color) {
+    StaggeredContainer(index = 1) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (uiState.isQuantumTunnelingActive && isConnected) {
+                    QuantumIndicator()
+                }
+                if (uiState.planName.equals("team", ignoreCase = true) && isConnected) {
+                    TeamCloakIndicator()
+                }
+                if (uiState.isCanaryToken) {
+                    CanaryIndicator()
+                }
+                if (uiState.isDiscoveryResilient && !uiState.isQuantumTunnelingActive) {
+                    ResilienceIndicator()
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            LiquidStatusOrb(
+                status = uiState.status,
+                // No `latency` parameter. It was removed, not ignored: see
+                // `LiquidStatusOrb`.
+                //
+                // This comment used to say `uiState.networkReport?.latencyMs` was
+                // "still real data and is still shown in Network Diagnostics",
+                // which justified withholding it here but nowhere else. **That
+                // premise is no longer true and was checked rather than
+                // assumed:** Network Diagnostics renders Connection, Type, DPI
+                // Status, Server Heuristic, Portal and Mesh Advice, and has no
+                // latency, jitter or packet-loss row at all
+                // (ShadowMeshComponents.kt:2137-2181). So the figure is shown
+                // nowhere.
+                //
+                // Recorded because the stale version was a trap: it read as
+                // "safe to surface latency in a measurement context", and a
+                // reader trusting it could reintroduce the figure believing it
+                // already had an honest home. It has none.
+                //
+                // `NetworkReport.latency_ms` therefore has zero display
+                // consumers in this client, which is also what makes L9's
+                // pending rename to `control_plane_rtt_ms` a no-op here rather
+                // than a call-site sweep.
+                isConnecting = isConnecting,
+                pausedUntil = uiState.pausedUntil
+            )
+        }
+    }
+}
+
+@Composable
+private fun TeamCloakIndicator() {
+    Surface(
+        color = Color(0xFFBE81F9).copy(alpha = 0.15f),
+        shape = CircleShape,
+        border = BorderStroke(0.5.dp, Color(0xFFBE81F9).copy(alpha = 0.4f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(
+                Icons.Outlined.VpnKey,
+                contentDescription = null,
+                tint = Color(0xFFBE81F9),
+                modifier = Modifier.size(10.dp)
+            )
+            Text(
+                "CLOAKED",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp
+                ),
+                color = Color(0xFFD8B4FE)
+            )
+        }
+    }
+}
+
+@Composable
+private fun NodeAndSessionCards(
+    uiState: VPNUiState,
+    isConnected: Boolean,
+    isConnecting: Boolean,
+    themeColor: Color,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    onOpenNodeSelection: () -> Unit,
+    onOpenModeSelector: () -> Unit,
+    isExpanded: Boolean
+) {
+    val stableConnectionText = stringResource(R.string.status_connected)
+    val syncingMeshText = stringResource(R.string.status_sync)
+    
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        StaggeredContainer(index = 2) {
+            SettingsCardSection(title = "ENTRY NODE", borderColor = Color.Transparent, bgColor = Color.Transparent) {
+                SettingsNavRow(
+                    icon = Icons.Outlined.Hub,
+                    iconColor = if (isConnected) Color(0xFF10BE84) else if (isConnecting) Color(0xFFF59E0B) else Color.Gray,
+                    label = uiState.selectedNode?.displayName ?: "Select Node",
+                    // E-3: the visible label is the peer's name, because naming
+                    // the node you picked is the point of this row. The spoken
+                    // label is not: it says *whether* one is chosen, never
+                    // *which*. Both facts stay on screen; only the accessibility
+                    // channel is narrowed.
+                    a11yLabel = if (uiState.selectedNode != null) {
+                        "Entry node selected"
+                    } else {
+                        "No entry node selected"
+                    },
+                    subtitle = when {
+                        isConnected -> stableConnectionText
+                        isConnecting -> syncingMeshText
+                        else -> stringResource(R.string.status_idle)
+                    },
+                    onClick = if (isConnecting) ({}) else {
+                        {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            onOpenNodeSelection()
+                        }
+                    },
+                )
+            }
+        }
+
+        StaggeredContainer(index = 3) {
+            SettingsCardSection(title = "LIVE SESSION", borderColor = Color.Transparent, bgColor = Color.Transparent, trailing = {
+                // Always rendered. A badge that appears and disappears at random
+                // is worse than none: it trains the user to ignore it.
+                NetworkHealthStateChip(
+                    NetworkHealthPolicy.resolve(
+                        isConnected = uiState.status == ConnectionStatus.CONNECTED,
+                        isDetecting = uiState.isDetectingNetwork,
+                        report = uiState.networkReport,
+                    )
+                )
+            }) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ConnectionDetailItem(
+                        label = "MESH IP",
+                        value = uiState.assignedIp ?: "---.---.---.---",
+                        icon = Icons.Outlined.Lan,
+                        color = themeColor,
+                        // The MESH IP stays on screen — L10 ruled it is not a
+                        // disclosure — but it is not spoken. TalkBack reading an
+                        // assigned address aloud is the case this whole pass is
+                        // about: the same string, a different observer, a
+                        // different answer.
+                        a11yValue = if (uiState.assignedIp != null) "Assigned" else "Not assigned",
+                        modifier = Modifier.weight(1f)
+                    )
+                    val meshTotalBytes = uiState.connectionStats.bytesSent + uiState.connectionStats.bytesReceived
+                    val statsValue = remember(meshTotalBytes) { com.shadowmesh.core_vpn.CoreUtils.formatBytes(meshTotalBytes) }
+                    ConnectionDetailItem(
+                        label = "TRAFFIC",
+                        value = statsValue,
+                        icon = Icons.Outlined.SwapVert,
+                        color = Color(0xFFBE81F9),
+                        // Traffic volume is retained in the spoken label: it is
+                        // the user's own consumption, identifies no third party,
+                        // and is the one number a screen-reader user most wants.
+                        a11yValue = statsValue,
+                        modifier = Modifier.weight(1f)
+                    )
+                    val (modeIcon, modeColor) = when (uiState.trafficModePreference) {
+                        TrafficModePreference.AUTO -> Icons.Outlined.AutoMode to themeColor
+                        TrafficModePreference.SPEED -> Icons.Outlined.Bolt to Color(0xFF10BE84)
+                        TrafficModePreference.STEALTH -> Icons.Outlined.VpnKey to Color(0xFFBE81F9)
+                    }
+                    ConnectionDetailItem(
+                        label = "MODE",
+                        value = if (uiState.planName.equals("team", ignoreCase = true)) {
+                            "HARDENED"
+                        } else {
+                            when (uiState.trafficModePreference) {
+                                TrafficModePreference.AUTO -> "AUTO"
+                                TrafficModePreference.SPEED -> "DIRECT"
+                                TrafficModePreference.STEALTH -> "STEALTH"
+                            }
+                        },
+                        icon = modeIcon,
+                        color = if (uiState.planName.equals("team", ignoreCase = true)) Color(0xFFBE81F9) else modeColor,
+                        a11yValue = "Current routing mode",
+                        onClick = {
+                            if (!uiState.planName.equals("team", ignoreCase = true)) {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                onOpenModeSelector()
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ControlSection(
+    uiState: VPNUiState,
+    isConnected: Boolean,
+    themeColor: Color,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    onToggleConnection: () -> Unit
+) {
+    StaggeredContainer(index = 4) {
+        val report = uiState.networkReport
+        val hasCriticalIssue = report?.dpiDetected?.toInt() == 1 ||
+            report?.captivePortal?.toInt() == 1
+        val controlBorder = if (hasCriticalIssue && isConnected) Color(0xFFF87E93).copy(alpha = 0.5f) else Color.Transparent
+        val controlBg = if (hasCriticalIssue && isConnected) Color(0xFFF87E93).copy(alpha = 0.08f) else Color.Transparent
+        
+        SettingsCardSection(
+            title = "MESH CONTROL",
+            borderColor = controlBorder,
+            bgColor = controlBg,
+            trailing = {
+                if (uiState.isEbpfActive && isConnected) {
+                    Surface(
+                        color = Color(0xFF10BE84).copy(alpha = 0.2f),
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, Color(0xFF10BE84).copy(alpha = 0.4f)),
+                    ) {
+                        Text(
+                            "KERNEL ACCELERATED",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            color = Color(0xFF6EE7B7),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            },
+        ) {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (uiState.interactionMethod == ConnectionInteractionMethod.SLIDE) {
+                    SlideToConnect(
+                        status = uiState.status,
+                        isConnecting = uiState.isConnecting,
+                        themeColor = if (hasCriticalIssue && isConnected) Color(0xFFF87E93) else themeColor,
+                        onSwipeComplete = {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            onToggleConnection()
+                        },
+                    )
+                } else {
+                    ConnectButton(
+                        status = uiState.status,
+                        onClick = {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            onToggleConnection()
+                        },
+                        themeColor = if (hasCriticalIssue && isConnected) Color(0xFFF87E93) else themeColor,
+                    )
+                }
+            }
+        }
+    }
+}

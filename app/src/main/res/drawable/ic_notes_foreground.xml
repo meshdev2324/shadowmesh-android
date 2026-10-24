@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Minimalist Premium Notepad Camouflage -->
+    <!-- Asymmetric lines for a modern "Notes" aesthetic that looks like a native system tool -->
+
+    <group
+        android:translateX="32"
+        android:translateY="32">
+
+        <!-- Paper Base -->
+        <path
+            android:fillColor="#E2E8F0"
+            android:pathData="M2,4h40v36h-40z" />
+
+        <!-- Folded Corner Detail -->
+        <path
+            android:fillColor="#CBD5E1"
+            android:pathData="M34,4h8v8z" />
+
+        <!-- Content Lines (Asymmetric Engineering style) -->
+        <path
+            android:fillColor="#64748B"
+            android:pathData="M8,12h18v2h-18z" />
+        <path
+            android:fillColor="#94A3B8"
+            android:pathData="M8,18h28v2h-28z" />
+        <path
+            android:fillColor="#94A3B8"
+            android:pathData="M8,24h24v2h-24z" />
+        <path
+            android:fillColor="#94A3B8"
+            android:pathData="M8,30h12v2h-12z" />
+
+    </group>
+</vector>

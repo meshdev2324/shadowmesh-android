@@ -1,0 +1,751 @@
+[Error]
+enum ShadowMeshError {
+  "AdaptiveFrictionRequired",
+  "KeyGenerationFailed",
+  "PowTimeout",
+  "ConnectionFailed",
+  "Unauthorized",
+  "Forbidden",
+  "SessionFrozen",
+  "NotFound",
+  "TooManyRequests",
+  "NodeNotFound",
+  "IoError",
+  "JsonError",
+  "InvalidDuration",
+  "ServerError",
+  "SocketTuningFailed",
+  "DnsResolutionError",
+  "HeaderMagicMismatch",
+  "UnsupportedProtocolVersion",
+  "InvalidAddressType",
+  "AuthTagVerificationFailed",
+  "InvalidStateTransition",
+  "Other",
+  "Common",
+};
+
+dictionary VPNNode {
+  string id;
+  string name;
+  string region;
+  string country;
+  string endpoint;
+  string public_key;
+  u32 load;
+  u32 latency;
+  boolean is_sovereign;
+  boolean is_online;
+  string? shard_id;
+};
+
+dictionary PublicNode {
+  string id;
+  string country;
+  string region;
+  boolean is_online;
+};
+
+dictionary VPNConfig {
+  string? private_key;
+  string public_key;
+  string address;
+  string endpoint;
+  string dns;
+  u32 mtu;
+  string traffic_mode;
+  RealityConfig? reality_config;
+  ShadowsocksConfig? shadowsocks_config;
+  HysteriaConfig? hysteria_config;
+  VmessConfig? vmess_config;
+};
+
+dictionary VmessConfig {
+  string server;
+  u32 port;
+  string uuid;
+  string security;
+};
+
+dictionary ShadowsocksConfig {
+  string server;
+  u32 port;
+  string method;
+  string password;
+};
+
+dictionary HysteriaConfig {
+  string server;
+  u32 port;
+  string auth_password;
+  string? obfuscation_key;
+  u64 up_mbps;
+  u64 down_mbps;
+  string? sni;
+};
+
+dictionary RealityConfig {
+  string server_ip;
+  u32 port;
+  string uuid;
+  string public_key;
+  string short_id;
+  string sni_target;
+  string? fingerprint;
+};
+
+dictionary ConnectionStats {
+  u64 bytes_received;
+  u64 bytes_sent;
+  u64 packets_received;
+  u64 packets_sent;
+  i64 last_handshake;
+  i64 connected_since;
+};
+
+dictionary ProtocolStats {
+  u64 quantum_sent;
+  u64 quantum_received;
+  u64 reality_sent;
+  u64 reality_received;
+  u64 shadowsocks_sent;
+  u64 shadowsocks_received;
+  u64 hysteria_sent;
+  u64 hysteria_received;
+};
+
+dictionary AnycastVip {
+  i64 id;
+  string ip_address;
+  string label;
+  boolean is_active;
+};
+
+// The projection of a roster.
+//
+// This is a vocabulary of CLAIMS, not of row shapes: a claim needs a speaker,
+// and there are two.
+//
+//   Anonymous     — the server applied the anonymous projection. The caller's
+//                   session was absent, expired or revoked
+//                   (services/server/src/api/handlers/vpn.rs:40-70).
+//   Full          — the server applied the full projection; the nine extra
+//                   fields were dropped by the type, not withheld by the
+//                   server (RFC-047 §2.4).
+//   LocalFallback — NO SERVER WAS ASKED. The client narrowed these rows
+//                   itself, from a fallback channel that carries no server
+//                   statement. This is NOT the same claim as `Anonymous` and
+//                   the two must never be conflated: one is "your session is
+//                   not in force", the other is "the control plane is
+//                   unreachable".
+//
+// The Rust type is `shadowmesh_core::NodeProjection`, whose variants are
+// `Anonymous`, `Full` and `LocalFallback` — the names here MUST match them,
+// because the generated scaffolding derives this enum's FFI converter from the
+// Rust type's variants, IN THIS ORDER. A mismatch does not fail the build; it
+// silently mis-maps the discriminants, which is the worst failure mode there
+// is (RFC-049 §15.6.4).
+enum NodeProjection {
+  "Anonymous",
+  "Full",
+  "LocalFallback",
+};
+
+// ── F102 ────────────────────────────────────────────────────────────────────
+// The roster envelope. The projection is the server's own statement about
+// which projection it applied, and it is carried in the body because a body is
+// what a client parses (RFC-047 §2.2).
+//
+// The accessor returns the ENVELOPE, not the rows. A separate projection
+// accessor would be two requests and two answers that could disagree; an
+// out-parameter is not expressible in UDL; a projection *parameter* would be a
+// request for a projection the server does not grant on request (RFC-043 R2).
+//
+// FROZEN 2026-10-21 by RFC-049 §15. Changing either of the two signatures
+// below requires a new RFC: the Android client's roster path depends on them.
+dictionary NodeRoster {
+  NodeProjection projection;
+  sequence<PublicNode> nodes;
+};
+
+// FROZEN 2026-10-21 by RFC-050 §8.1. Changing `GlobalManifest`'s row type,
+// or `PublicNode`'s four fields, requires a new RFC.
+//
+// ⚠️ The row type is `PublicNode`, and it was `VPNNode`. RFC-050 §2.2: the
+// manifest is a **listing** surface, and a listing carries `PublicNode` —
+// the same row type the roster route uses. `VPNNode` is the **connect**
+// surface's row, and it carries eight mandatory fields; the anonymous
+// projection's row carries four, so an anonymous manifest body **did not
+// deserialize at all** and the `"projection"` the server sent correctly was
+// never read.
+//
+// ⇒ The connect material comes from the authenticated
+// `GET /api/v1/config/:server_id` (RFC-043 R2, applied by RFC-050 §2.4).
+// It is NOT optionalised, NOT synthesised, and NOT defaulted here.
+dictionary GlobalManifest {
+  NodeProjection projection;
+  sequence<PublicNode> nodes;
+  sequence<AnycastVip> anycast_vips;
+  string version;
+};
+
+enum QuantumResistanceLevel {
+  "NONE",
+  "HYBRID",
+  "FULL",
+};
+
+dictionary UserSettings {
+  QuantumResistanceLevel quantum_level;
+  boolean kill_switch_enabled;
+  boolean dns_leak_protection;
+  boolean emergency_recovery_enabled;
+  sequence<string> dns_servers;
+};
+
+dictionary PoWChallenge {
+  string challenge;
+  u32 difficulty;
+};
+
+dictionary PoWSolution {
+  string challenge;
+  string solution;
+};
+
+dictionary ActivationChallenge {
+  string challenge;
+  u32 difficulty;
+};
+
+dictionary ActivationRequest {
+  string code;
+  string device_name;
+  string device_type;
+  string device_id;
+  string hardware_fingerprint;
+  string? public_key;
+  record<string, string>? deep_fingerprint;
+  string? oob_nonce;
+  string? oob_sig;
+  i64? oob_ts;
+};
+
+dictionary ActivationResponse {
+  string message;
+  string? token;
+  string? plan;
+  string? expires_at;
+  i64 remaining_days;
+  string subscription_notice;
+  i32 devices_remaining;
+  string? vpn_config;
+  boolean? is_canary;
+  string? server_location;
+};
+
+dictionary HeartbeatResponse {
+  string message;
+  string device_id;
+  boolean session_active;
+  string subscription_notice;
+  string next_heartbeat;
+};
+
+dictionary HeartbeatRequest {
+  string device_id;
+  boolean background_mode;
+  record<string, string>? deep_fingerprint;
+  u64? bytes_sent_quantum;
+  u64? bytes_received_quantum;
+  u64? bytes_sent_reality;
+  u64? bytes_received_reality;
+};
+
+dictionary HealthStatus {
+  string status;
+  string version;
+  u64 uptime_seconds;
+};
+
+dictionary SecurityManifest {
+    record<string, boolean> flags;
+    string min_client_version;
+    i64 timestamp;
+};
+
+dictionary AttestationReport {
+  string provider;
+  string quote;
+  string public_key;
+  string nonce;
+  string measurement;
+};
+
+dictionary SpeedTestResult {
+  f64 latency_ms;
+  f64 download_speed_mbps;
+  f64 upload_speed_mbps;
+};
+
+enum SplitTunnelMode {
+  "Include",
+  "Exclude",
+};
+
+enum ServicePlan {
+  "Solo",
+  "Team",
+  "Premium",
+  "Family",
+  "Trial",
+};
+
+dictionary SplitTunnelConfig {
+  boolean enabled;
+  SplitTunnelMode mode;
+  sequence<string> app_list;
+};
+
+dictionary KillSwitchEvent {
+  u64 timestamp;
+  string event_type;
+  string details;
+};
+
+dictionary KillSwitchState {
+    boolean is_active;
+    boolean is_lockout;
+    record<string, boolean> feature_flags;
+    u64? last_remote_check;
+    boolean fallback_mode;
+};
+
+enum SecurityEventType {
+    "KillSwitchStateChange",
+    "JailbreakRootDetected",
+    "CertificateValidationFailed",
+    "TamperingAlert",
+    "LoginAttempt",
+    "Logout",
+    "PanicInitiated",
+};
+
+dictionary SecurityEvent {
+    u64 timestamp;
+    string device_id;
+    string app_version;
+    SecurityEventType event_type;
+    string details;
+    boolean success;
+};
+
+interface SecurityEventLogger {
+    void log_event(SecurityEventType event_type, string details, boolean success, ApiClient? api_client);
+    sequence<SecurityEvent> get_events();
+    void purge();
+};
+
+dictionary AntiTamperConfig {
+    record<string, string> expected_hashes;
+};
+
+interface AntiTamperChecker {
+    constructor(AntiTamperConfig config);
+    [Throws=ShadowMeshError]
+    boolean verify_app_signature(string package_name, string signature_hash);
+    [Throws=ShadowMeshError]
+    boolean verify_component(string component_name, sequence<u8> component_data);
+    [Throws=ShadowMeshError]
+    boolean is_tampered(record<string, sequence<u8>> components);
+};
+
+dictionary TrafficPreferences {
+  u32? data_limit_mb;
+  boolean prioritize_wifi;
+  boolean restrict_background_data;
+  TrafficModePreference mode_preference;
+};
+
+enum ConnectionStatus {
+  "Disconnected",
+  "ConnectingDirect",
+  "ConnectingFragmented",
+  "ConnectingReality",
+  "ConnectingWebSocket",
+  "ConnectingShadowsocks",
+  "ConnectingHysteria",
+  "ConnectingVmess",
+  "Connected",
+  "Paused",
+  "Degraded",
+  "Disconnecting",
+  "Error",
+};
+
+enum TrafficMode {
+  "Normal",
+  "Fragmented",
+  "Reality",
+  "WebSocket",
+  "Shadowsocks",
+  "Hysteria",
+  "Vmess",
+};
+
+enum TrafficModePreference {
+  "Auto",
+  "Speed",
+  "Stealth",
+};
+
+enum NetworkType {
+  "Unknown",
+  "WiFi",
+  "Cellular",
+  "Ethernet",
+};
+
+// Tri-state encoding for a diagnostic that may not have run.
+//
+// A bare boolean for "captive portal detected" cannot distinguish "we looked
+// and found none" from "we never looked". It was initialised to false and never
+// assigned again, so the UI reported a clean result for a check that had never
+// been performed. On a censorship tool that is false reassurance, so these
+// fields are nullable instead:
+//
+//   null - the check did not run, or the platform cannot perform it
+//   0   - the check ran and found nothing
+//   1   - the check ran and found a problem
+//
+// Modelled as a nullable u8 rather than an enum because the generated bindings
+// did not resolve an enum referenced from a dictionary; a nullable integer
+// carries the identical three states and cannot be mis-constructed.
+dictionary NetworkReport {
+    boolean is_connected;
+    NetworkType network_type;
+
+    // Mean round-trip latency over the probes that SUCCEEDED, or null when
+    // fewer than two of the five probes succeeded (F68).
+    //
+    // This is the one field in this dictionary whose null does NOT mean "the
+    // scan did not run" -- that is `is_connected`. Null here means "we did not
+    // gather enough samples to publish a defensible mean". A single surviving
+    // probe is not a latency figure: publishing it at full value would make a
+    // degrading link look better, since less averaging survives the worse the
+    // link gets.
+    //
+    // Read it together with `packet_loss` below, which is denominated over all
+    // five probes and is populated whenever the link is up at all.
+    //
+    // NOTE: this measures the control plane, not the tunnel. The rename to
+    // `control_plane_rtt_ms` is deliberately NOT done yet -- it is sequenced
+    // after F68 and requires L7's read-out contract (F52/F67).
+    u32? latency_ms;
+    u32? jitter_ms;
+
+    // Probe loss over all five probes, 0.0 to 1.0. Unlike `latency_ms` this
+    // keeps the full denominator, so it stays honest exactly when the latency
+    // figure has been withheld.
+    f32? packet_loss;
+    SpeedTestResult? speed_test;
+    ServerNetworkReport? server_report;
+    u8? captive_portal;
+    u8? dpi_detected;
+    boolean dpi_detected_by_server;
+    boolean is_protected;
+};dictionary IdentityInfo {
+    i64 id;
+    string public_key;
+    boolean is_admin;
+    boolean mfa_enabled;
+    string created_at;
+};
+
+dictionary ServerNetworkReport {
+    string client_ip;
+    string geoip; // JSON string
+    boolean potential_dpi;
+    u8 security_score;
+    string recommendation;
+};
+
+callback interface SocketProtector {
+  boolean protect(i32 fd);
+};
+
+interface NetworkDetector {
+    [Throws=ShadowMeshError]
+    NetworkReport detect(boolean run_speed_test);
+};
+
+interface VPNManager {
+  [Throws=ShadowMeshError]
+  void activate(string code, string? token, string? plan, i32 devices_remaining, i64 remaining_days);
+  boolean is_activated();
+  ConnectionStatus get_status();
+  void set_selected_node(VPNNode node);
+  VPNNode? get_selected_node();
+  void set_nodes(sequence<VPNNode> nodes);
+  void refresh_node_latencies();
+  void set_traffic_mode(TrafficMode mode);
+  sequence<VPNNode> get_nodes();
+  VPNNode? get_best_node();
+  [Throws=ShadowMeshError]
+  void initiate_connection(VPNNode node, string device_public_key);
+  void complete_connection();
+  void disconnect();
+  boolean is_connection_timed_out();
+  TrafficMode? get_current_connection_mode();
+  UserSettings get_user_settings();
+  void set_kill_switch_enabled(boolean enabled);
+  boolean is_kill_switch_enabled();
+  void set_traffic_mode_preference(TrafficModePreference preference);
+  TrafficModePreference get_traffic_mode_preference();
+  ConnectionStats get_stats();
+  void set_stats(ConnectionStats stats);
+  ProtocolStats get_protocol_stats();
+  [Throws=ShadowMeshError]
+  void pause(u32 minutes);
+  void resume();
+  boolean check_pause_expiry();
+  i64? get_paused_until();
+  SplitTunnelConfig get_split_tunnel_config();
+  void set_split_tunnel_config(SplitTunnelConfig config);
+  void set_dpi_detected(boolean detected);
+  boolean is_dpi_detected();
+  void set_baseline_ip(string ip);
+  string? get_baseline_ip();
+  ServicePlan get_plan();
+  i32 get_devices_remaining();
+  i64 get_remaining_days();
+  boolean is_ebpf_active();
+  void zeroize();
+  void panic_wipe();
+};
+
+interface ApiClient {
+  void set_device_id(string device_id);
+  void set_auth_token(string? token);
+  void set_traffic_mode(TrafficMode? mode);
+  void set_pow_solution(string solution, string original_challenge);
+  void set_retry_signal(boolean retry);
+  [Throws=ShadowMeshError]
+  NodeRoster get_nodes();
+  [Throws=ShadowMeshError]
+  NodeRoster get_nodes_resilient();
+  [Throws=ShadowMeshError]
+  GlobalManifest fetch_global_manifest();
+  [Throws=ShadowMeshError]
+  ActivationChallenge request_activation_challenge(string device_id);
+  [Throws=ShadowMeshError]
+  ActivationResponse activate(ActivationRequest req);
+  [Throws=ShadowMeshError]
+  VPNConfig get_config(string node_id, string public_key, string? mode);
+  [Throws=ShadowMeshError]
+  HeartbeatResponse heartbeat(
+    HeartbeatRequest req
+  );
+  [Throws=ShadowMeshError]
+  void pause_session();
+  [Throws=ShadowMeshError]
+  void revoke_session();
+  [Throws=ShadowMeshError]
+  void report_compromised(string device_id, string reason);
+  [Throws=ShadowMeshError]
+  string refresh_token();
+  [Throws=ShadowMeshError]
+  HealthStatus check_health();
+  [Throws=ShadowMeshError]
+  SecurityManifest fetch_security_manifest();
+  [Throws=ShadowMeshError]
+  string qr_generate(string device_id, string device_name, string os_name, string os_version, string arch);
+  [Throws=ShadowMeshError]
+  string qr_status(string token);
+  [Throws=ShadowMeshError]
+  void qr_authorize(string token);
+  [Throws=ShadowMeshError]
+  IdentityInfo get_identity_info();
+  [Throws=ShadowMeshError]
+  string setup_totp_begin(); // Returns JSON as string for now
+  [Throws=ShadowMeshError]
+  void setup_totp_finish(string code);
+  [Throws=ShadowMeshError]
+  string generate_member_token(string label);
+  [Throws=ShadowMeshError]
+  string passkey_register_begin(string username);
+  [Throws=ShadowMeshError]
+  void passkey_register_finish(string username, string response_json);
+  [Throws=ShadowMeshError]
+  string passkey_login_start(string username);
+  [Throws=ShadowMeshError]
+  ActivationResponse passkey_login_finish(string username, string response_json);
+  [Throws=ShadowMeshError]
+  void log_security_event(string event_json);
+  void zeroize();
+};
+
+interface NodeCache {
+  VPNNode? get(string node_id);
+  void put(VPNNode node);
+  void put_all(sequence<VPNNode> nodes);
+  sequence<VPNNode> get_all();
+  f64 hit_rate();
+  [Throws=ShadowMeshError]
+  void save_to_disk(string path);
+  void clear();
+};
+
+interface KillSwitchManager {
+  boolean is_active();
+  boolean is_lockout();
+  void set_lockout(boolean enabled);
+  boolean is_feature_enabled(string feature);
+  void set_feature_enabled(string feature, boolean enabled);
+  [Throws=ShadowMeshError]
+  void check_remote(ApiClient client);
+  void trigger_kill_switch(string reason);
+  void deactivate_kill_switch();
+  void set_fallback_mode(boolean enabled);
+  boolean is_fallback_mode();
+  sequence<KillSwitchEvent> get_audit_log();
+  void save_state_to_cache(KillSwitchState state);
+  KillSwitchState? get_cached_state();
+};
+
+interface TrafficAnalytics {
+  void record_stats(string server_id, ConnectionStats stats);
+  u64 get_total_bytes();
+  u64 get_bytes_this_month();
+  void reset_month();
+};
+
+interface SpeedTest {
+  [Throws=ShadowMeshError]
+  SpeedTestResult run_full_test();
+  [Throws=ShadowMeshError]
+  f64 measure_latency();
+  [Throws=ShadowMeshError]
+  f64 measure_download(u32 size_kb);
+  [Throws=ShadowMeshError]
+  f64 measure_upload(u32 size_kb);
+};
+
+interface DesktopController {
+  constructor(ApiClient api_client, VPNManager vpn_manager);
+  [Throws=ShadowMeshError]
+  void authenticate_member(string member_token);
+  [Throws=ShadowMeshError]
+  string create_member_token(string label);
+};
+
+namespace shadowmesh {
+  string? normalize_activation_code(string raw);
+  UserSettings get_default_user_settings();
+  [Throws=ShadowMeshError]
+  SecurityEventLogger create_security_logger(string device_id, string app_version, string storage_dir);
+  [Throws=ShadowMeshError]
+  sequence<string> generate_wireguard_keys();
+  // RFC-026 §8b: the code-seeded KDF (`generate_device_wireguard_keys`) was
+  // removed here rather than deprecated. Its output was an X25519 *private*
+  // key computed from a user-typable, plan-shared secret, so the function was
+  // itself the vulnerability. Do not reintroduce any entry point that maps a
+  // shared or user-supplied string to key material; per-device identity comes
+  // from the CSPRNG and is persisted (RFC-026 §4.1).
+  [Throws=ShadowMeshError]
+  VPNConfig parse_wireguard_config(string config_str);
+  // ⚠️ `sequence<VPNNode> get_mock_nodes();` WAS HERE, and it is GONE.
+  //
+  // The core carried a **literal fabricated row** — `id:"mock-1"`,
+  // `name:"Mock Node 1"`, `endpoint:"1.1.1.1:51820"`,
+  // `public_key:"mock-pub-key-1"` — and exported it over the FFI. The
+  // iOS client's fallback consumed exactly this literal, so the next
+  // consumer could re-introduce a fabricated roster with one call.
+  //
+  // ⇒ **A fabrication source in the core is a trap for the next consumer.**
+  // The literal now lives in the TEST tree only
+  // (`libs/…/tests/common/mod.rs`), and the FFI no longer exports it, so
+  // the export cannot be reached from a client at all.
+  [Throws=ShadowMeshError]
+  PoWSolution solve_pow(PoWChallenge challenge);
+  [Throws=ShadowMeshError]
+  VPNManager create_vpn_manager(UserSettings settings);
+  string get_persistent_device_id();
+  void setup_logging();
+  [Throws=ShadowMeshError]
+  ApiClient create_api_client(string base_url);
+  [Throws=ShadowMeshError]
+  ApiClient create_api_client_with_pins(string base_url, sequence<string> pinned_hashes);
+  [Throws=ShadowMeshError]
+  NodeCache create_node_cache(u32 max_size, u32 ttl_seconds);
+  [Throws=ShadowMeshError]
+  KillSwitchManager create_kill_switch_manager();
+  [Throws=ShadowMeshError]
+  TrafficAnalytics create_traffic_analytics();
+  TrafficPreferences create_traffic_preferences();
+  SpeedTest create_speed_test(ApiClient api_client);
+  NetworkDetector create_network_detector(ApiClient api_client, VPNManager? manager);
+
+// Phase 4: Shadow-Routing & Quantum Tunneling (PROTOCOLS.md §1, §2, §3)
+  VPNNode? shadow_route_best_node(sequence<VPNNode> nodes);
+  string preferred_traffic_mode_for_region(string region_code);
+  bytes decrypt_qr_pairing_payload(bytes ciphertext, string pin);
+  bytes encrypt_qr_pairing_payload(bytes plaintext, string pin);
+  // F98: the refusal is now an EXCEPTION the consumer must handle, not a
+  // sentinel value it must know to check. The empty string was the refusal
+  // before this, and a sentinel that is a legal value in the type is not a
+  // refusal (RFC-049 §6.2 item 14).
+  [Throws=ShadowMeshError]
+  string generate_reality_short_id();
+  RealityConfig? parse_reality_vless_uri(string uri);
+  string generate_dh_private_key();
+  string compute_dh_public_key(string private_key_hex);
+  string compute_dh_shared_secret(string private_key_hex, string other_public_key_hex);
+  string derive_session_token(string dh_shared_secret_hex);
+  u32 get_quantum_mtu();
+  u32 get_quantum_tcp_mss();
+  [Throws=ShadowMeshError]
+  AttestationReport get_mock_attestation_report(string nonce);
+
+// v6.9.4: Socket Protection (Infinite Loop Fix)
+  void register_socket_protector(SocketProtector protector);
+
+// v6.2: High-Censorship Resilience (Unified Engine)
+  // ⚠️ DEPRECATED (RFC-048 §3.6) — RETAINED, NOT REMOVED.
+  //
+  // The two-phase path below (connect_transport → attach_tun) replaces this
+  // one-call establishment. The removal condition is: "no FFI consumer
+  // remains AND the tracked .so has been rebuilt without the symbol".
+  // Removing a UDL entry does NOT remove the symbol from a shipped .so
+  // (scripts/ci/check-udl-binary-drift.sh, blocking direction), and the
+  // tracked .so cannot be rebuilt until F46's freshness gate exists — so the
+  // removal is blocked on F46, not on this deprecation.
+  [Throws=ShadowMeshError]
+  void start_vpn_engine(i32 fd, VPNConfig config);
+  void stop_vpn_engine();
+
+  // ── RFC-048 ─────────────────────────────────────────────────────────────────
+  // Two-phase transport establishment. Additive: the signatures of
+  // start_vpn_engine and stop_vpn_engine are unchanged.
+  //
+  // connect_transport proves the transport with NO tun descriptor. The client
+  // installs its capture only after this returns. attach_tun then hands the
+  // descriptor to the already-connected transport.
+  //
+  // FROZEN 2026-10-20 by RFC-048 §3.1. Changing any of these three signatures
+  // requires a new RFC: the Android client's call order depends on them.
+  [Throws=ShadowMeshError]
+  u64 connect_transport(VPNConfig config);
+
+  [Throws=ShadowMeshError]
+  void attach_tun(u64 handle, i32 fd);
+
+  // Not [Throws]: a teardown path must not raise. Returns whether the caller
+  // owned the session it asked to close.
+  boolean close_transport(u64 handle);
+
+  [Throws=ShadowMeshError]
+  void start_reality_proxy(RealityConfig config, u16 local_port);
+  void stop_reality_proxy();
+};
+
